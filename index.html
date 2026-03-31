@@ -7,172 +7,189 @@
 <style>
 body {
   font-family: Arial;
-  text-align: center;
   padding: 20px;
-  background: #f4f4f4;
+  background: #dbeeff;
 }
-
-input {
-  width: 60%;
-  padding: 10px;
-  margin: 10px;
-}
-
-button {
-  padding: 10px 20px;
-  cursor: pointer;
-}
-
-.risk-meter {
-  width: 80%;
-  height: 20px;
-  background: #ddd;
-  margin: 20px auto;
-  border-radius: 10px;
-}
-
-.bar {
-  height: 100%;
-  width: 0%;
-  border-radius: 10px;
-  background: green;
-}
-
 .dark {
   background: #121212;
   color: white;
 }
+textarea {
+  width: 90%;
+  height: 80px;
+  padding: 10px;
+}
+button {
+  padding: 10px 15px;
+  margin: 5px;
+  cursor: pointer;
+}
+.bar {
+  height: 20px;
+  width: 0%;
+  background: green;
+}
 </style>
-
 </head>
 
 <body>
 
 <h1>🔍 Phishing URL Detector</h1>
-
 <button onclick="toggleTheme()">🌙</button>
 
-<br><br>
+<textarea id="url-input" placeholder="Enter one or multiple URLs (each in new line)"></textarea><br>
 
-<input type="text" id="url-input" placeholder="Enter URL here">
-<button onclick="analyzeURL()">Analyze</button>
+<button onclick="analyzeBatch()">Analyze</button>
+<button onclick="copyReport()">📋 Copy</button>
+<button onclick="downloadReport()">⬇ Download</button>
 
-<h2>Phishing Probability: <span id="probability">0%</span></h2>
+<h2 id="alert-text"></h2>
 
-<div class="risk-meter">
-  <div class="bar" id="risk-bar"></div>
-</div>
-
-<h3>Explanation</h3>
-<ul id="explanation-list"></ul>
-
-<h3>Domain Info</h3>
-<p>Domain Length: <span id="domain-length">-</span></p>
-<p>Subdomains: <span id="subdomain-count">-</span></p>
-<p>TLD: <span id="tld">-</span></p>
+<div id="results"></div>
 
 <script>
+
+// SOUND ALERT 🔔
+function playAlert() {
+  const audio = new Audio("https://www.soundjay.com/buttons/beep-03.wav");
+  audio.play();
+}
 
 function toggleTheme() {
   document.body.classList.toggle("dark");
 }
 
-// Risk meter update
-function updateRisk(probability) {
-  const bar = document.getElementById('risk-bar');
-  bar.style.width = probability + '%';
+let reportData = "";
 
-  if (probability < 40) bar.style.background = 'green';
-  else if (probability < 70) bar.style.background = 'yellow';
-  else bar.style.background = 'red';
+// MAIN BATCH FUNCTION 🧪
+function analyzeBatch() {
+  const input = document.getElementById("url-input").value.trim();
+  const urls = input.split("\n").filter(u => u.trim() !== "");
+  const resultsDiv = document.getElementById("results");
 
-  document.getElementById('probability').textContent = probability + '%';
+  resultsDiv.innerHTML = "";
+  reportData = "";
+
+  urls.forEach(url => {
+    const result = analyzeURL(url.trim());
+    resultsDiv.innerHTML += result.html;
+    reportData += result.text + "\n\n";
+  });
 }
 
-// MAIN FUNCTION
-function analyzeURL() {
+// CORE ANALYSIS FUNCTION
+function analyzeURL(url) {
 
-  const url = document.getElementById('url-input').value.trim();
-  const explanationList = document.getElementById('explanation-list');
-  explanationList.innerHTML = "";
+  let score = 0;
+  let domainScore = 0;
+  let structureScore = 0;
+  let keywordScore = 0;
 
-  if (!url) return;
+  let reasons = [];
+
+  function addReason(text) {
+    reasons.push(text);
+  }
 
   let domain = "";
-  let tld = "";
-  let subdomains = 0;
-  let length = 0;
-  let score = 0;
-  let isInvalid = false;
 
   try {
-    const normalizedUrl = url.includes('://') ? url : 'http://' + url;
-    const parsed = new URL(normalizedUrl);
+    const parsed = new URL(url.includes("://") ? url : "http://" + url);
     domain = parsed.hostname;
-  } catch (e) {
-    isInvalid = true;
-    addReason("✔ Invalid URL format");
-
-    let cleaned = url.replace(/https?:\/\//, "");
-    domain = cleaned.split("/")[0];
-
+  } catch {
     score += 40;
+    structureScore += 40;
+    addReason("Invalid URL format");
   }
 
+  // STRUCTURE CHECKS
   if (url.includes("://:")) {
     score += 20;
-    addReason("✔ Malformed URL structure");
+    structureScore += 20;
+    addReason("Malformed structure");
   }
 
-  const parts = domain.split('.');
-  if (parts.length > 1) {
-    tld = parts.pop();
-    subdomains = Math.max(0, parts.length - 1);
-  } else {
-    tld = "";
-    subdomains = 0;
-  }
-  length = domain.length;
-
-  document.getElementById('domain-length').textContent = length;
-  document.getElementById('subdomain-count').textContent = subdomains;
-  document.getElementById('tld').textContent = "." + tld;
-
-  const domainRegex = /^[a-zA-Z0-9.-]+$/;
-  if (!domainRegex.test(domain)) {
-    score += 20;
-    addReason("✔ Invalid domain characters");
-  }
-
-  if (length > 30) { score += 15; addReason("✔ URL too long"); }
-  if (subdomains > 2) { score += 10; addReason("✔ Too many subdomains"); }
-  if (["tk","ml","ga","cf","gq"].includes(tld)) { score += 20; addReason("✔ Suspicious TLD"); }
-  if (url.includes("@")) { score += 15; addReason("✔ Contains @ symbol"); }
-
-  if (/verify|login|secure|account/.test(url)) {
-    score += 10;
-    addReason("✔ Suspicious keyword");
-  }
-
-  if (/^[a-z0-9]{10,}$/.test(domain.replace(/\./g, ""))) {
+  if (url.includes("@")) {
     score += 15;
-    addReason("✔ Random-looking domain");
+    structureScore += 15;
+    addReason("Contains @ symbol");
   }
 
-  if (isInvalid && score < 50) {
-    score += 20;
-    addReason("✔ Suspicious malformed URL");
+  // DOMAIN CHECKS
+  if (domain.length > 30) {
+    score += 15;
+    domainScore += 15;
+    addReason("Long domain");
+  }
+
+  if (/^[a-z0-9]{10,}$/i.test(domain.replace(/\./g, ""))) {
+    score += 15;
+    domainScore += 15;
+    addReason("Random domain");
+  }
+
+  // KEYWORD CHECK
+  if (/verify|login|secure|account/i.test(url)) {
+    score += 10;
+    keywordScore += 10;
+    addReason("Suspicious keyword");
   }
 
   if (score > 100) score = 100;
 
-  updateRisk(score);
-
-  function addReason(text) {
-    const li = document.createElement("li");
-    li.textContent = text;
-    explanationList.appendChild(li);
+  // 🚨 SMART ALERT
+  let alertMsg = "";
+  if (score >= 70) {
+    alertMsg = "🚨 This looks dangerous. Proceed carefully.";
+    playAlert();
+    alert(alertMsg);
   }
+
+  // UI HTML
+  const html = `
+    <hr>
+    <b>URL:</b> ${url}<br>
+    <b>Overall Risk:</b> ${score}%<br>
+
+    <b>Breakdown:</b><br>
+    Domain Risk: ${domainScore}%<br>
+    Structure Risk: ${structureScore}%<br>
+    Keyword Risk: ${keywordScore}%<br>
+
+    <b>Reasons:</b>
+    <ul>${reasons.map(r => `<li>${r}</li>`).join("")}</ul>
+  `;
+
+  // TEXT REPORT
+  const text = `
+URL: ${url}
+Overall Risk: ${score}%
+
+Breakdown:
+Domain: ${domainScore}%
+Structure: ${structureScore}%
+Keyword: ${keywordScore}%
+
+Reasons:
+${reasons.join(", ")}
+`;
+
+  return { html, text };
+}
+
+// 📋 COPY REPORT
+function copyReport() {
+  navigator.clipboard.writeText(reportData);
+  alert("Report copied!");
+}
+
+// ⬇ DOWNLOAD REPORT
+function downloadReport() {
+  const blob = new Blob([reportData], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "phishing_report.txt";
+  a.click();
 }
 
 </script>
